@@ -1,0 +1,1745 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Maqueta 3D del mapa</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #eceae6; font-family: -apple-system, Helvetica, Arial, sans-serif; }
+  #canvas-wrap { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
+  #hint {
+    position: absolute; left: 16px; bottom: 16px;
+    background: rgba(255,255,255,0.7);
+    color: #555; font-size: 13px;
+    padding: 8px 12px; border-radius: 8px;
+    backdrop-filter: blur(4px);
+    pointer-events: none;
+  }
+  #joy-base {
+    position: fixed; width: 90px; height: 90px; border-radius: 50%;
+    border: 2px solid rgba(0,0,0,0.25);
+    transform: translate(-50%,-50%);
+    display: none; pointer-events: none; z-index: 9;
+  }
+  #joy-dot {
+    position: fixed; width: 26px; height: 26px; border-radius: 50%;
+    background: #111;
+    transform: translate(-50%,-50%);
+    display: none; pointer-events: none; z-index: 10;
+  }
+</style>
+</head>
+<body>
+<div id="canvas-wrap"></div>
+<div id="joy-base"></div>
+<div id="joy-dot"></div>
+<div id="hint">Mueve el cursor para mirar alrededor · haz clic y arrastra para caminar · usa las flechas del teclado para desplazarte rapido</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script>
+const MAP_W = 360.0;
+const MAP_H = 2600.0;
+const SCALE = 40.0;
+const FOOTPRINTS = [{"x": 0.0, "y": -40.0, "w": 102.5, "h": 162.4, "height": 2.37}, {"x": 0.0, "y": 146.0, "w": 103.9, "h": 166.6, "height": 2.29}, {"x": 0.0, "y": 332.7, "w": 108.3, "h": 137.0, "height": 4.18}, {"x": 0.0, "y": 491.0, "w": 104.4, "h": 152.3, "height": 3.59}, {"x": 0.0, "y": 684.6, "w": 108.0, "h": 227.6, "height": 2.9}, {"x": 0.0, "y": 931.9, "w": 101.9, "h": 141.8, "height": 2.63}, {"x": 0.0, "y": 1103.1, "w": 109.2, "h": 193.9, "height": 2.35}, {"x": 0.0, "y": 1328.8, "w": 101.8, "h": 150.6, "height": 2.95}, {"x": 0.0, "y": 1522.5, "w": 106.6, "h": 175.3, "height": 3.88}, {"x": 0.0, "y": 1727.0, "w": 106.0, "h": 187.4, "height": 3.95}, {"x": 0.0, "y": 1951.8, "w": 107.9, "h": 228.0, "height": 4.02}, {"x": 0.0, "y": 2202.2, "w": 102.0, "h": 178.9, "height": 4.03}, {"x": 0.0, "y": 2400.6, "w": 101.9, "h": 217.5, "height": 3.63}, {"x": 259.3, "y": -40.0, "w": 100.7, "h": 175.6, "height": 3.34}, {"x": 261.5, "y": 184.7, "w": 98.5, "h": 136.1, "height": 4.58}, {"x": 256.5, "y": 364.7, "w": 103.5, "h": 158.5, "height": 2.25}, {"x": 251.8, "y": 555.5, "w": 108.2, "h": 146.8, "height": 7.06}, {"x": 256.3, "y": 724.6, "w": 103.7, "h": 154.8, "height": 2.39}, {"x": 253.9, "y": 911.8, "w": 106.1, "h": 184.9, "height": 4.27}, {"x": 252.1, "y": 1147.4, "w": 107.9, "h": 171.5, "height": 4.5}, {"x": 258.2, "y": 1350.3, "w": 101.8, "h": 147.6, "height": 1.39}, {"x": 257.9, "y": 1524.5, "w": 102.1, "h": 156.3, "height": 3.09}, {"x": 259.5, "y": 1698.9, "w": 100.5, "h": 225.3, "height": 3.68}, {"x": 261.2, "y": 1967.7, "w": 98.8, "h": 135.4, "height": 4.3}, {"x": 250.9, "y": 2154.4, "w": 109.1, "h": 169.2, "height": 6.81}, {"x": 250.7, "y": 2356.4, "w": 109.3, "h": 136.7, "height": 1.27}, {"x": 250.4, "y": 2518.9, "w": 109.6, "h": 130.0, "height": 6.29}];
+const SLABS = [];
+const PROPS = [];
+const HAS_TEXTURE = false;
+const ROOF_DATA_URI = "";
+const EYE_HEIGHT = 1.6;
+const START_X = 0.0;
+const START_Z = 34.5;
+const HAS_FACADE = true;
+const FACADE_MAP = {"13": "img/fachada_der_13.jpg", "14": "img/fachada_der_14.jpg", "15": "img/fachada_der_15.jpg", "16": "img/fachada_der_16.jpg", "17": "img/fachada_der_17.jpg", "18": "img/fachada_der_18.jpg", "19": "img/fachada_der_19.jpg", "20": "img/fachada_der_20.jpg", "21": "img/fachada_der_21.jpg", "22": "img/fachada_der_22.jpg", "23": "img/fachada_der_23.jpg", "24": "img/fachada_der_24.jpg", "25": "img/fachada_der_25.jpg", "26": "img/fachada_der_26.jpg"};
+const textureLoader = new THREE.TextureLoader();
+const FACADE_MAP_IZQ = {"0": "img/fachada_izq_00.jpg", "1": "img/fachada_izq_01.jpg", "2": "img/fachada_izq_02.jpg", "3": "img/fachada_izq_03.jpg", "4": "img/fachada_izq_04.jpg", "5": "img/fachada_izq_05.jpg", "6": "img/fachada_izq_06.jpg", "7": "img/fachada_izq_07.jpg", "8": "img/fachada_izq_08.jpg", "9": "img/fachada_izq_09.jpg", "10": "img/fachada_izq_10.jpg", "11": "img/fachada_izq_11.jpg", "12": "img/fachada_izq_12.jpg"};
+
+const wrap = document.getElementById('canvas-wrap');
+const joyBase = document.getElementById('joy-base');
+const joyDot = document.getElementById('joy-dot');
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070b1c);
+scene.fog = new THREE.Fog(0x070b1c, 14, 42);
+
+const camera = new THREE.PerspectiveCamera(60, wrap.clientWidth / wrap.clientHeight, 0.1, 200);
+camera.rotation.order = 'YXZ';
+camera.position.set(START_X, EYE_HEIGHT, START_Z);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+wrap.appendChild(renderer.domElement);
+
+const buildingMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0.02 });
+const groundMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 });
+const edgeMaterial = new THREE.LineBasicMaterial({ color: 0xc7c5c0, transparent: true, opacity: 0.55 });
+
+const groundSize = Math.max(MAP_W, MAP_H) / SCALE + 6;
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(groundSize, groundSize), groundMaterial);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const GROUND_TEXTURE_URI = "img/suelo_asfalto.jpg";
+const GROUND_TILE_HEIGHT = 2.2; // unidades de mundo que ocupa una repeticion vertical de la textura
+textureLoader.load(GROUND_TEXTURE_URI, function (tex) {
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 4;
+  const aspect = tex.image.width / tex.image.height;
+  const tileWidth = GROUND_TILE_HEIGHT * aspect;
+  const repY = Math.max(1, Math.round(groundSize / GROUND_TILE_HEIGHT));
+  const repX = Math.max(1, Math.round(groundSize / tileWidth));
+  tex.repeat.set(repX, repY);
+  groundMaterial.map = tex;
+  groundMaterial.needsUpdate = true;
+});
+
+const ambient = new THREE.AmbientLight(0xffffff, 0.75);
+scene.add(ambient);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.95);
+dirLight.position.set(10, 16, 8);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+const shadowExtent = groundSize / 2;
+dirLight.shadow.camera.left = -shadowExtent;
+dirLight.shadow.camera.right = shadowExtent;
+dirLight.shadow.camera.top = shadowExtent;
+dirLight.shadow.camera.bottom = -shadowExtent;
+dirLight.shadow.camera.near = 0.5;
+dirLight.shadow.camera.far = 60;
+scene.add(dirLight);
+
+function makeStarTexture() {
+  const size = 32;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.4, 'rgba(255,255,255,0.85)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+}
+
+function addStars(count) {
+  const starTex = makeStarTexture();
+  const positions = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const radius = 130;
+  for (let i = 0; i < count; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(Math.random() * 0.9); // sesgado hacia el cenit, evita el horizonte bajo
+    const r = radius * (0.85 + Math.random() * 0.15);
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = Math.abs(r * Math.cos(phi)) + 6;
+    positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    sizes[i] = 0.8 + Math.random() * 1.6;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    size: 1.6,
+    map: starTex,
+    transparent: true,
+    depthWrite: false,
+    fog: false,
+    color: 0xffffff,
+    sizeAttenuation: true
+  });
+  const stars = new THREE.Points(geo, mat);
+  scene.add(stars);
+}
+addStars(900);
+
+function toScene(fx, fy, fw, fh) {
+  return {
+    X: (fx + fw / 2 - MAP_W / 2) / SCALE,
+    Z: (fy + fh / 2 - MAP_H / 2) / SCALE,
+    W: fw / SCALE,
+    D: fh / SCALE
+  };
+}
+
+function makeRoofMaterial(baseTexture, W, D) {
+  const tex = baseTexture.clone();
+  tex.image = baseTexture.image;
+  tex.needsUpdate = true;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(Math.max(1, Math.round(W * 1.6)), Math.max(1, Math.round(D * 1.6)));
+  if (renderer.capabilities) tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.0 });
+}
+
+function addBuilding(fx, fy, fw, fh, height, roofTexture, facadeDataURI) {
+  const s = toScene(fx, fy, fw, fh);
+  const geo = new THREE.BoxGeometry(s.W, height, s.D);
+  let mat;
+  if (roofTexture || facadeDataURI) {
+    const roofMat = roofTexture ? makeRoofMaterial(roofTexture, s.W, s.D) : buildingMaterial;
+    mat = [buildingMaterial, buildingMaterial, roofMat, buildingMaterial, buildingMaterial, buildingMaterial];
+  } else {
+    mat = buildingMaterial;
+  }
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(s.X, height / 2, s.Z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  if (!facadeDataURI) {
+    const edges = new THREE.EdgesGeometry(geo);
+    mesh.add(new THREE.LineSegments(edges, edgeMaterial));
+  }
+  scene.add(mesh);
+  if (facadeDataURI) {
+    textureLoader.load(facadeDataURI, function (tex) {
+      tex.encoding = THREE.sRGBEncoding;
+      tex.anisotropy = renderer.capabilities ? renderer.capabilities.getMaxAnisotropy() : 1;
+      const facadeMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92, metalness: 0.0 });
+      mesh.material[0] = facadeMat; // +x
+      mesh.material[1] = facadeMat; // -x
+      mesh.material[4] = facadeMat; // +z
+      mesh.material[5] = facadeMat; // -z
+    });
+  }
+  return mesh;
+}
+
+function addSlab(fx, fy, fw, fh, height) {
+  const s = toScene(fx, fy, fw, fh);
+  const geo = new THREE.BoxGeometry(s.W, height, s.D);
+  const mesh = new THREE.Mesh(geo, buildingMaterial);
+  mesh.position.set(s.X, height / 2, s.Z);
+  mesh.receiveShadow = true;
+  const edges = new THREE.EdgesGeometry(geo);
+  mesh.add(new THREE.LineSegments(edges, edgeMaterial));
+  scene.add(mesh);
+}
+
+function addProp(fx, fy, fr, height, baseY) {
+  const X = (fx - MAP_W / 2) / SCALE;
+  const Z = (fy - MAP_H / 2) / SCALE;
+  const R = fr / SCALE;
+  const geo = new THREE.CylinderGeometry(R * 0.92, R, height, 24);
+  const mesh = new THREE.Mesh(geo, buildingMaterial);
+  mesh.position.set(X, baseY + height / 2, Z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+}
+
+SLABS.forEach(function (s) {
+  addSlab(s.x, s.y, s.w, s.h, s.height || 0.08);
+});
+PROPS.forEach(function (p) {
+  addProp(p.x, p.y, p.r || 8, p.height || 0.18, p.baseY || 0);
+});
+
+function buildAllFootprints(roofTexture) {
+  FOOTPRINTS.forEach(function (f, i) {
+    const h = f.height || (0.6 + (i % 5) * 0.18);
+    let facadeDataURI = null;
+    if (HAS_FACADE && FACADE_MAP[i]) facadeDataURI = FACADE_MAP[i];
+    else if (FACADE_MAP_IZQ[i]) facadeDataURI = FACADE_MAP_IZQ[i];
+    addBuilding(f.x, f.y, f.w, f.h, h, roofTexture, facadeDataURI);
+  });
+}
+
+
+function makeTiledFaceMaterial(baseTexture, worldW, worldH, tileH) {
+  const tex = baseTexture.clone();
+  tex.image = baseTexture.image;
+  tex.needsUpdate = true;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  const aspect = baseTexture.image.width / baseTexture.image.height;
+  const tileW = tileH * aspect;
+  const repX = Math.max(1, Math.round(worldW / tileW));
+  const repY = Math.max(1, Math.round(worldH / tileH));
+  tex.repeat.set(repX, repY);
+  if (renderer.capabilities) tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92, metalness: 0.04 });
+}
+
+function addPlainWall(fx, fy, fw, fh, height, color, wallTextureURI) {
+  const s = toScene(fx, fy, fw, fh);
+  const geo = new THREE.BoxGeometry(s.W, height, s.D);
+  const plainMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.92, metalness: 0.04 });
+  const mesh = new THREE.Mesh(geo, plainMat);
+  mesh.position.set(s.X, height / 2, s.Z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  if (!wallTextureURI) {
+    const edges = new THREE.EdgesGeometry(geo);
+    mesh.add(new THREE.LineSegments(edges, edgeMaterial));
+  }
+  scene.add(mesh);
+  if (wallTextureURI) {
+    textureLoader.load(wallTextureURI, function (tex) {
+      tex.encoding = THREE.sRGBEncoding;
+      const tileH = height;
+      const frontMat = makeTiledFaceMaterial(tex, s.W, height, tileH);
+      const sideMat = makeTiledFaceMaterial(tex, s.D, height, tileH);
+      const topMat = makeTiledFaceMaterial(tex, s.W, s.D, tileH);
+      mesh.material = [sideMat, sideMat, topMat, plainMat, frontMat, frontMat];
+    });
+  }
+  return mesh;
+}
+
+if (HAS_TEXTURE) {
+  const loader = new THREE.TextureLoader();
+  loader.load(ROOF_DATA_URI, function (roofTexture) {
+    roofTexture.encoding = THREE.sRGBEncoding;
+    buildAllFootprints(roofTexture);
+  });
+} else {
+  buildAllFootprints(null);
+}
+
+// ============= ACERAS Y FAROLAS =============
+// Aceras: plataformas blancas rectangulares a cada lado de los edificios
+// (entre la fachada y la calle), con una altura razonable de bordillo.
+const SIDEWALK_HEIGHT = 0.14;   // altura del bordillo/acera en unidades de mundo (~14 cm)
+const SIDEWALK_DEPTH = 22;      // ancho de la acera, en unidades del mapa fuente
+const SIDEWALK_PAD = 40;        // margen extra en Y para que la acera sobresalga un poco en los extremos
+
+const halfMap = MAP_W / 2;
+const LEFT_ROW = FOOTPRINTS.filter(function (f) { return f.x < halfMap; });
+const RIGHT_ROW = FOOTPRINTS.filter(function (f) { return f.x >= halfMap; });
+
+// borde interior (pegado a fachada) de cada acera, calculado para no invadir ningun edificio
+const leftFacadeEdge = Math.max.apply(null, LEFT_ROW.map(function (f) { return f.x + f.w; }));
+const rightFacadeEdge = Math.min.apply(null, RIGHT_ROW.map(function (f) { return f.x; }));
+
+const allYStart = Math.min.apply(null, FOOTPRINTS.map(function (f) { return f.y; })) - SIDEWALK_PAD;
+const allYEnd = Math.max.apply(null, FOOTPRINTS.map(function (f) { return f.y + f.h; })) + SIDEWALK_PAD;
+const sidewalkFy = allYStart;
+const sidewalkFh = allYEnd - allYStart;
+
+const sidewalkMaterial = new THREE.MeshStandardMaterial({ color: 0xf2f1ec, roughness: 0.9, metalness: 0.0 });
+
+const SIDEWALK_TEXTURE_DATA_URI = "img/acera.jpg";
+const SIDEWALK_TILE_SIZE = 2.4; // tamano (en unidades de mundo) de una baldosa repetida de la textura
+
+function tileSidewalkFaceMaterial(baseTexture, dimA, dimB) {
+  const tex = baseTexture.clone();
+  tex.image = baseTexture.image;
+  tex.needsUpdate = true;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(Math.max(1, Math.round(dimA / SIDEWALK_TILE_SIZE)), Math.max(1, Math.round(dimB / SIDEWALK_TILE_SIZE)));
+  if (renderer.capabilities) tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0.0 });
+}
+
+function addSidewalk(fx, fy, fw, fh, height) {
+  const s = toScene(fx, fy, fw, fh);
+  const geo = new THREE.BoxGeometry(s.W, height, s.D);
+  const mesh = new THREE.Mesh(geo, sidewalkMaterial);
+  mesh.position.set(s.X, height / 2, s.Z);
+  mesh.receiveShadow = true;
+  mesh.castShadow = false;
+  const edges = new THREE.EdgesGeometry(geo);
+  mesh.add(new THREE.LineSegments(edges, edgeMaterial));
+  scene.add(mesh);
+  textureLoader.load(SIDEWALK_TEXTURE_DATA_URI, function (tex) {
+    tex.encoding = THREE.sRGBEncoding;
+    const sideXMat = tileSidewalkFaceMaterial(tex, s.D, height); // caras +x/-x (laterales cortos): ancho = profundidad D
+    const sideZMat = tileSidewalkFaceMaterial(tex, s.W, height); // caras +z/-z (laterales largos): ancho = anchura W
+    const topMat = tileSidewalkFaceMaterial(tex, s.W, s.D);      // cara superior
+    mesh.material = [sideXMat, sideXMat, topMat, sidewalkMaterial, sideZMat, sideZMat];
+  });
+  return { fxStart: fx, fxEnd: fx + fw };
+}
+
+// acera izquierda: cubre TODA la superficie bajo la fila de edificios de la izquierda,
+// desde el borde exterior del mapa hasta el borde de la calle central (mismo borde de
+// calle que antes, para que las farolas no cambien de posicion)
+const leftOuterEdge = Math.min.apply(null, LEFT_ROW.map(function (f) { return f.x; }));
+const leftSidewalk = addSidewalk(leftOuterEdge, sidewalkFy, (leftFacadeEdge + SIDEWALK_DEPTH) - leftOuterEdge, sidewalkFh, SIDEWALK_HEIGHT);
+// acera derecha: cubre TODA la superficie bajo la fila de edificios de la derecha,
+// desde el borde de la calle central hasta el borde exterior del mapa
+const rightOuterEdge = Math.max.apply(null, RIGHT_ROW.map(function (f) { return f.x + f.w; }));
+const rightSidewalkFx = rightFacadeEdge - SIDEWALK_DEPTH;
+const rightSidewalk = addSidewalk(rightSidewalkFx, sidewalkFy, rightOuterEdge - rightSidewalkFx, sidewalkFh, SIDEWALK_HEIGHT);
+
+// Farolas (streetlamps) - sprites con textura personalizada, apoyadas sobre la acera,
+// alineadas a lo largo de la calle en el borde exterior de cada acera (junto al bordillo)
+const LAMP_TEXTURE_URI = "img/farola.png";
+let LAMP_TEXTURE = null;
+const lampSprites = [];
+
+// una farola por edificio, situada en la CALLE (no en la acera), justo pasando el
+// bordillo hacia el centro de la calle, a la altura Y del centro de ese edificio.
+// Se mantiene la misma alineacion a lo largo de la calle que antes (misma Z),
+// pero la X se desplaza desde el borde de la acera hacia el interior de la calle,
+// y la base se apoya en el nivel del suelo (calle), no en la altura de la acera.
+const LAMP_STREET_OFFSET = 10; // desplazamiento hacia la calle, en unidades del mapa fuente
+const LAMP_BASE_Y = 0; // la farola se apoya en el nivel de la calle (suelo), no en SIDEWALK_HEIGHT
+const LAMP_POSITIONS = FOOTPRINTS.map(function (f) {
+  const isLeftRow = f.x < halfMap;
+  const fy = f.y + f.h / 2;
+  const fx = isLeftRow
+    ? leftSidewalk.fxEnd + LAMP_STREET_OFFSET
+    : rightSidewalk.fxStart - LAMP_STREET_OFFSET;
+  const X = (fx - halfMap) / SCALE;
+  const Z = (fy - MAP_H / 2) / SCALE;
+  return { X: X, Z: Z };
+});
+
+textureLoader.load(LAMP_TEXTURE_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  tex.anisotropy = renderer.capabilities ? renderer.capabilities.getMaxAnisotropy() : 1;
+  LAMP_TEXTURE = tex;
+  const aspect = tex.image.width / tex.image.height; // ancho/alto de la imagen de la farola
+  const lampWorldHeight = 3.1; // altura de la farola en unidades de mundo
+  const lampWorldWidth = lampWorldHeight * aspect;
+
+  LAMP_POSITIONS.forEach(function (p) {
+    const mat = new THREE.SpriteMaterial({
+      map: tex,
+      transparent: true,
+      depthWrite: false
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(lampWorldWidth, lampWorldHeight, 1);
+    // el sprite se centra en su punto medio; lo subimos media altura
+    // para que la base de la farola quede apoyada sobre la calle
+    sprite.position.set(p.X, LAMP_BASE_Y + lampWorldHeight / 2, p.Z);
+    scene.add(sprite);
+    lampSprites.push(sprite);
+  });
+});
+// ============= FIN ACERAS Y FAROLAS =============
+
+// ============= CARTEL 3D COLGADO EN LA PARED (bandera, mira hacia afuera) =============
+const SIGN_TEXTURE_DATA_URI = "img/cartel1_otoman_vision.jpg";
+const SIGN_BUILDING_INDEX = 2; // edificio 3, fila izquierda (contando desde 1)
+const signBuilding = FOOTPRINTS[SIGN_BUILDING_INDEX];
+const signFaceX_source = signBuilding.x + signBuilding.w; // borde de la fachada (hacia la calle)
+const signFaceX = (signFaceX_source - halfMap) / SCALE;
+const signCenterZ_source = signBuilding.y + signBuilding.h / 2;
+const signCenterZ = (signCenterZ_source - MAP_H / 2) / SCALE;
+const SIGN_Z_OFFSET = 0.32; // desplazamiento lateral respecto al centro de fachada (junto a la puerta, no encima)
+const SIGN_ASPECT = 535 / 514; // ancho/alto de la imagen del cartel recortada
+
+// El cartel es una "bandera": su cara (con el diseno) NO mira hacia afuera de la pared (+X),
+// sino a lo largo de la calle (+/-Z), como un cartel de tienda que sobresale en un soporte
+// perpendicular a la fachada, para que se lea al caminar por la acera y se vea de canto
+// al mirar la pared de frente -- igual que en la imagen de referencia.
+const SIGN_HEIGHT_WORLD = 0.34; // mas pequeno, como se pidio
+const SIGN_WIDTH_X_WORLD = SIGN_HEIGHT_WORLD * SIGN_ASPECT; // cuanto sobresale de la pared
+const SIGN_DEPTH_Z_WORLD = 0.045; // grosor del cartel (canto)
+const SIGN_MOUNT_Y = 1.55; // altura de montaje, junto al dintel de la puerta
+const SIGN_ARM_LENGTH = 0.1; // longitud del brazo/mensula que une el cartel a la pared
+
+const signFrameMaterial = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.6, metalness: 0.2 });
+// dimensiones del box: X = lo que sobresale de la pared, Y = altura, Z = grosor (canto, delgado)
+const signGeo = new THREE.BoxGeometry(SIGN_WIDTH_X_WORLD, SIGN_HEIGHT_WORLD, SIGN_DEPTH_Z_WORLD);
+const signMesh = new THREE.Mesh(signGeo, [signFrameMaterial, signFrameMaterial, signFrameMaterial, signFrameMaterial, signFrameMaterial, signFrameMaterial]);
+const signCenterX = signFaceX + SIGN_ARM_LENGTH + SIGN_WIDTH_X_WORLD / 2;
+signMesh.position.set(signCenterX, SIGN_MOUNT_Y, signCenterZ + SIGN_Z_OFFSET);
+signMesh.castShadow = true;
+signMesh.receiveShadow = true;
+scene.add(signMesh);
+const signEdges = new THREE.EdgesGeometry(signGeo);
+signMesh.add(new THREE.LineSegments(signEdges, edgeMaterial));
+
+// mensula (soporte) que une el cartel a la pared: un brazo horizontal + una placa vertical en la pared
+const bracketMat = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.5, metalness: 0.3 });
+const armGeo = new THREE.BoxGeometry(SIGN_ARM_LENGTH + 0.02, 0.035, 0.035);
+const armMesh = new THREE.Mesh(armGeo, bracketMat);
+armMesh.position.set(signFaceX + SIGN_ARM_LENGTH / 2, SIGN_MOUNT_Y, signCenterZ + SIGN_Z_OFFSET);
+scene.add(armMesh);
+const plateGeo = new THREE.BoxGeometry(0.02, 0.16, 0.1);
+const plateMesh = new THREE.Mesh(plateGeo, bracketMat);
+plateMesh.position.set(signFaceX + 0.01, SIGN_MOUNT_Y, signCenterZ + SIGN_Z_OFFSET);
+scene.add(plateMesh);
+
+const signFaceMaterial2 = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.5, metalness: 0.05 });
+signMesh.material[4] = signFaceMaterial2;
+signMesh.material[5] = signFaceMaterial2;
+signMesh.material.needsUpdate = true;
+textureLoader.load(SIGN_TEXTURE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  signFaceMaterial2.map = tex;
+  signFaceMaterial2.needsUpdate = true;
+});
+
+// ---- Iluminacion interior + exterior calida, y resaltado al pasar el cursor (cartel OTOMAN VISION, edificio 3) ----
+const SIGN1_EMISSIVE_DATA_URI = "img/cartel1_otoman_vision_luz.jpg";
+signFaceMaterial2.emissive = new THREE.Color(0xffffff);
+signFaceMaterial2.emissiveIntensity = 0;
+textureLoader.load(SIGN1_EMISSIVE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  signFaceMaterial2.emissiveMap = tex;
+  signFaceMaterial2.needsUpdate = true;
+});
+
+const sign1GlowLight = new THREE.PointLight(0xffb35c, 0, 2.2);
+sign1GlowLight.position.set(signCenterX, SIGN_MOUNT_Y, signCenterZ + SIGN_Z_OFFSET);
+scene.add(sign1GlowLight);
+
+let sign1Lit = false;
+function setSign1Lit(lit) {
+  sign1Lit = lit;
+  signFaceMaterial2.emissiveIntensity = lit ? 1.5 : 0;
+  sign1GlowLight.intensity = lit ? 1.6 : 0;
+}
+
+const sign1HoverOutlineMat = new THREE.LineBasicMaterial({ color: 0xffe27a, linewidth: 2, transparent: true, opacity: 0.95 });
+const sign1HoverOutline = new THREE.LineSegments(new THREE.EdgesGeometry(signGeo), sign1HoverOutlineMat);
+sign1HoverOutline.position.copy(signMesh.position);
+sign1HoverOutline.visible = false;
+scene.add(sign1HoverOutline);
+
+const sign1Raycaster = new THREE.Raycaster();
+const sign1Pointer = new THREE.Vector2();
+let sign1Hovering = false;
+let sign1PointerDownPos = null;
+
+wrap.addEventListener('pointerdown', function (e) {
+  sign1PointerDownPos = { x: e.clientX, y: e.clientY };
+});
+wrap.addEventListener('pointerup', function (e) {
+  if (!sign1PointerDownPos) return;
+  const dx = e.clientX - sign1PointerDownPos.x;
+  const dy = e.clientY - sign1PointerDownPos.y;
+  sign1PointerDownPos = null;
+  if (Math.sqrt(dx * dx + dy * dy) > 8) return; // fue un arrastre de camara, no un clic
+  const rect = wrap.getBoundingClientRect();
+  sign1Pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  sign1Pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  sign1Raycaster.setFromCamera(sign1Pointer, camera);
+  const hits = sign1Raycaster.intersectObject(signMesh, false);
+  if (hits.length > 0) {
+    setSign1Lit(!sign1Lit);
+  }
+});
+
+window.addEventListener('pointermove', function (e) {
+  const rect = wrap.getBoundingClientRect();
+  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+    if (sign1Hovering) { sign1Hovering = false; sign1HoverOutline.visible = false; }
+    return;
+  }
+  sign1Pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  sign1Pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  sign1Raycaster.setFromCamera(sign1Pointer, camera);
+  const hits = sign1Raycaster.intersectObject(signMesh, false);
+  const isHover = hits.length > 0;
+  if (isHover !== sign1Hovering) {
+    sign1Hovering = isHover;
+    sign1HoverOutline.visible = isHover;
+    wrap.style.cursor = isHover ? 'pointer' : 'default';
+  }
+});
+// ---- Fin iluminacion + resaltado (OTOMAN VISION) ----
+
+// ============= FIN CARTEL 3D =============
+
+// ============= CARTEL 3D #2 COLGADO EN LA PARED (bandera, edificio 5 izquierda) =============
+const SIGN2_TEXTURE_DATA_URI = "img/cartel2_creative_universe.jpg";
+const SIGN2_BUILDING_INDEX = 4; // edificio 5, fila izquierda (contando desde 1)
+const sign2Building = FOOTPRINTS[SIGN2_BUILDING_INDEX];
+const sign2FaceX_source = sign2Building.x + sign2Building.w;
+const sign2FaceX = (sign2FaceX_source - halfMap) / SCALE;
+const sign2CenterZ_source = sign2Building.y + sign2Building.h / 2;
+const sign2CenterZ = (sign2CenterZ_source - MAP_H / 2) / SCALE;
+const SIGN2_Z_OFFSET = 0.32; // junto a la puerta central, no encima
+const SIGN2_ASPECT = 1; // textura ya cuadrada (recompuesta con correccion de perspectiva)
+
+const SIGN2_HEIGHT_WORLD = 0.34;
+const SIGN2_WIDTH_X_WORLD = SIGN2_HEIGHT_WORLD * SIGN2_ASPECT;
+const SIGN2_DEPTH_Z_WORLD = 0.045;
+const SIGN2_MOUNT_Y = 1.55;
+const SIGN2_ARM_LENGTH = 0.1;
+
+const sign2Geo = new THREE.BoxGeometry(SIGN2_WIDTH_X_WORLD, SIGN2_HEIGHT_WORLD, SIGN2_DEPTH_Z_WORLD);
+const sign2Mesh = new THREE.Mesh(sign2Geo, [signFrameMaterial, signFrameMaterial, signFrameMaterial, signFrameMaterial, signFrameMaterial, signFrameMaterial]);
+const sign2CenterX = sign2FaceX + SIGN2_ARM_LENGTH + SIGN2_WIDTH_X_WORLD / 2;
+sign2Mesh.position.set(sign2CenterX, SIGN2_MOUNT_Y, sign2CenterZ + SIGN2_Z_OFFSET);
+sign2Mesh.castShadow = true;
+sign2Mesh.receiveShadow = true;
+scene.add(sign2Mesh);
+const sign2Edges = new THREE.EdgesGeometry(sign2Geo);
+sign2Mesh.add(new THREE.LineSegments(sign2Edges, edgeMaterial));
+
+const arm2Geo = new THREE.BoxGeometry(SIGN2_ARM_LENGTH + 0.02, 0.035, 0.035);
+const arm2Mesh = new THREE.Mesh(arm2Geo, bracketMat);
+arm2Mesh.position.set(sign2FaceX + SIGN2_ARM_LENGTH / 2, SIGN2_MOUNT_Y, sign2CenterZ + SIGN2_Z_OFFSET);
+scene.add(arm2Mesh);
+const plate2Geo = new THREE.BoxGeometry(0.02, 0.16, 0.1);
+const plate2Mesh = new THREE.Mesh(plate2Geo, bracketMat);
+plate2Mesh.position.set(sign2FaceX + 0.01, SIGN2_MOUNT_Y, sign2CenterZ + SIGN2_Z_OFFSET);
+scene.add(plate2Mesh);
+
+const sign2FaceMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.5, metalness: 0.05 });
+sign2Mesh.material[4] = sign2FaceMaterial;
+sign2Mesh.material[5] = sign2FaceMaterial;
+sign2Mesh.material.needsUpdate = true;
+textureLoader.load(SIGN2_TEXTURE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  sign2FaceMaterial.map = tex;
+  sign2FaceMaterial.needsUpdate = true;
+});
+
+// ---- Iluminacion interior + exterior calida, y resaltado al pasar el cursor (cartel CREATIVE UNIVERSE) ----
+const SIGN2_EMISSIVE_DATA_URI = "img/cartel2_creative_universe_luz.jpg";
+sign2FaceMaterial.emissive = new THREE.Color(0xffffff);
+sign2FaceMaterial.emissiveIntensity = 0;
+textureLoader.load(SIGN2_EMISSIVE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  sign2FaceMaterial.emissiveMap = tex;
+  sign2FaceMaterial.needsUpdate = true;
+});
+
+// halo calido exterior, para que la luz tambien se derrame sobre la pared alrededor del cartel
+const sign2GlowLight = new THREE.PointLight(0xffb35c, 0, 2.2);
+sign2GlowLight.position.set(sign2CenterX, SIGN2_MOUNT_Y, sign2CenterZ + SIGN2_Z_OFFSET);
+scene.add(sign2GlowLight);
+
+let sign2Lit = false;
+function setSign2Lit(lit) {
+  sign2Lit = lit;
+  sign2FaceMaterial.emissiveIntensity = lit ? 1.5 : 0;
+  sign2GlowLight.intensity = lit ? 1.6 : 0;
+}
+
+const sign2HoverOutlineMat = new THREE.LineBasicMaterial({ color: 0xffe27a, linewidth: 2, transparent: true, opacity: 0.95 });
+const sign2HoverOutline = new THREE.LineSegments(new THREE.EdgesGeometry(sign2Geo), sign2HoverOutlineMat);
+sign2HoverOutline.position.copy(sign2Mesh.position);
+sign2HoverOutline.visible = false;
+scene.add(sign2HoverOutline);
+
+const sign2Raycaster = new THREE.Raycaster();
+const sign2Pointer = new THREE.Vector2();
+let sign2Hovering = false;
+let sign2PointerDownPos = null;
+
+wrap.addEventListener('pointerdown', function (e) {
+  sign2PointerDownPos = { x: e.clientX, y: e.clientY };
+});
+wrap.addEventListener('pointerup', function (e) {
+  if (!sign2PointerDownPos) return;
+  const dx = e.clientX - sign2PointerDownPos.x;
+  const dy = e.clientY - sign2PointerDownPos.y;
+  sign2PointerDownPos = null;
+  if (Math.sqrt(dx * dx + dy * dy) > 8) return; // fue un arrastre de camara, no un clic
+  const rect = wrap.getBoundingClientRect();
+  sign2Pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  sign2Pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  sign2Raycaster.setFromCamera(sign2Pointer, camera);
+  const hits = sign2Raycaster.intersectObject(sign2Mesh, false);
+  if (hits.length > 0) {
+    setSign2Lit(!sign2Lit);
+  }
+});
+
+window.addEventListener('pointermove', function (e) {
+  const rect = wrap.getBoundingClientRect();
+  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+    if (sign2Hovering) { sign2Hovering = false; sign2HoverOutline.visible = false; }
+    return;
+  }
+  sign2Pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  sign2Pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  sign2Raycaster.setFromCamera(sign2Pointer, camera);
+  const hits = sign2Raycaster.intersectObject(sign2Mesh, false);
+  const isHover = hits.length > 0;
+  if (isHover !== sign2Hovering) {
+    sign2Hovering = isHover;
+    sign2HoverOutline.visible = isHover;
+    wrap.style.cursor = isHover ? 'pointer' : 'default';
+  }
+});
+// ---- Fin iluminacion + resaltado (CREATIVE UNIVERSE) ----
+
+// ============= FIN CARTEL 3D #2 =============
+
+// ============= CARTEL 3D #4 COLGADO EN LA PARED (SOBRE MI, edificio 12 izquierda) =============
+const SIGN4_TEXTURE_DATA_URI = "img/cartel4_sobre_mi.jpg";
+const SIGN4_BUILDING_INDEX = 11; // edificio 12, fila izquierda (contando desde 1)
+const sign4Building = FOOTPRINTS[SIGN4_BUILDING_INDEX];
+const sign4FaceX_source = sign4Building.x + sign4Building.w;
+const sign4FaceX = (sign4FaceX_source - halfMap) / SCALE;
+const sign4CenterZ_source = sign4Building.y + sign4Building.h / 2;
+const sign4CenterZ = (sign4CenterZ_source - MAP_H / 2) / SCALE;
+const SIGN4_Z_OFFSET = 0.85; // desplazado hacia la pared roja, lejos de la ventana
+
+const SIGN4_ASPECT = 820 / 1964; // ancho/alto del nuevo diseño (fondo blanco y azul)
+const SIGN4_HEIGHT_WORLD = 1.0; // cartel mucho mas grande
+const SIGN4_WIDTH_X_WORLD = SIGN4_HEIGHT_WORLD * SIGN4_ASPECT;
+const SIGN4_DEPTH_Z_WORLD = 0.045; // mismo grosor que los carteles de los edificios 1 y 5
+const SIGN4_MOUNT_Y = 2.3; // altura aproximada de la primera linea de balcones
+const SIGN4_ARM_LENGTH = 0.1;
+
+const sign4Geo = new THREE.BoxGeometry(SIGN4_WIDTH_X_WORLD, SIGN4_HEIGHT_WORLD, SIGN4_DEPTH_Z_WORLD);
+const sign4Mesh = new THREE.Mesh(sign4Geo, [signFrameMaterial, signFrameMaterial, signFrameMaterial, signFrameMaterial, signFrameMaterial, signFrameMaterial]);
+const sign4CenterX = sign4FaceX + SIGN4_ARM_LENGTH + SIGN4_WIDTH_X_WORLD / 2;
+sign4Mesh.position.set(sign4CenterX, SIGN4_MOUNT_Y, sign4CenterZ + SIGN4_Z_OFFSET);
+sign4Mesh.castShadow = true;
+sign4Mesh.receiveShadow = true;
+scene.add(sign4Mesh);
+
+const arm4Geo = new THREE.BoxGeometry(SIGN4_ARM_LENGTH + 0.02, 0.035, 0.035);
+const arm4Mesh = new THREE.Mesh(arm4Geo, bracketMat);
+arm4Mesh.position.set(sign4FaceX + SIGN4_ARM_LENGTH / 2, SIGN4_MOUNT_Y, sign4CenterZ + SIGN4_Z_OFFSET);
+scene.add(arm4Mesh);
+const plate4Geo = new THREE.BoxGeometry(0.02, 0.16, 0.1);
+const plate4Mesh = new THREE.Mesh(plate4Geo, bracketMat);
+plate4Mesh.position.set(sign4FaceX + 0.01, SIGN4_MOUNT_Y, sign4CenterZ + SIGN4_Z_OFFSET);
+scene.add(plate4Mesh);
+
+const sign4FaceMaterial = new THREE.MeshStandardMaterial({ color: 0x141415, roughness: 0.5, metalness: 0.05 });
+sign4Mesh.material[4] = sign4FaceMaterial;
+sign4Mesh.material[5] = sign4FaceMaterial;
+sign4Mesh.material.needsUpdate = true;
+textureLoader.load(SIGN4_TEXTURE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  sign4FaceMaterial.map = tex;
+  sign4FaceMaterial.needsUpdate = true;
+});
+
+// ---- Iluminacion interior + exterior azulada, y resaltado al pasar el cursor (cartel SOBRE MI, edificio 12) ----
+const SIGN4_EMISSIVE_DATA_URI = "img/cartel4_sobre_mi_luz.jpg";
+sign4FaceMaterial.emissive = new THREE.Color(0xffffff);
+sign4FaceMaterial.emissiveIntensity = 0;
+textureLoader.load(SIGN4_EMISSIVE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  sign4FaceMaterial.emissiveMap = tex;
+  sign4FaceMaterial.needsUpdate = true;
+});
+
+const sign4GlowLight = new THREE.PointLight(0xffb35c, 0, 2.4);
+sign4GlowLight.position.set(sign4CenterX, SIGN4_MOUNT_Y, sign4CenterZ + SIGN4_Z_OFFSET);
+scene.add(sign4GlowLight);
+
+let sign4Lit = false;
+function setSign4Lit(lit) {
+  sign4Lit = lit;
+  sign4FaceMaterial.emissiveIntensity = lit ? 1.7 : 0;
+  sign4GlowLight.intensity = lit ? 1.7 : 0;
+}
+
+const sign4HoverOutlineMat = new THREE.LineBasicMaterial({ color: 0xffe27a, linewidth: 2, transparent: true, opacity: 0.95 });
+const sign4HoverOutline = new THREE.LineSegments(new THREE.EdgesGeometry(sign4Geo), sign4HoverOutlineMat);
+sign4HoverOutline.position.copy(sign4Mesh.position);
+sign4HoverOutline.visible = false;
+scene.add(sign4HoverOutline);
+
+const sign4Raycaster = new THREE.Raycaster();
+const sign4Pointer = new THREE.Vector2();
+let sign4Hovering = false;
+let sign4PointerDownPos = null;
+
+wrap.addEventListener('pointerdown', function (e) {
+  sign4PointerDownPos = { x: e.clientX, y: e.clientY };
+});
+wrap.addEventListener('pointerup', function (e) {
+  if (!sign4PointerDownPos) return;
+  const dx = e.clientX - sign4PointerDownPos.x;
+  const dy = e.clientY - sign4PointerDownPos.y;
+  sign4PointerDownPos = null;
+  if (Math.sqrt(dx * dx + dy * dy) > 8) return; // fue un arrastre de camara, no un clic
+  const rect = wrap.getBoundingClientRect();
+  sign4Pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  sign4Pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  sign4Raycaster.setFromCamera(sign4Pointer, camera);
+  const hits = sign4Raycaster.intersectObject(sign4Mesh, false);
+  if (hits.length > 0) {
+    setSign4Lit(!sign4Lit);
+  }
+});
+
+window.addEventListener('pointermove', function (e) {
+  const rect = wrap.getBoundingClientRect();
+  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+    if (sign4Hovering) { sign4Hovering = false; sign4HoverOutline.visible = false; }
+    return;
+  }
+  sign4Pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  sign4Pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  sign4Raycaster.setFromCamera(sign4Pointer, camera);
+  const hits = sign4Raycaster.intersectObject(sign4Mesh, false);
+  const isHover = hits.length > 0;
+  if (isHover !== sign4Hovering) {
+    sign4Hovering = isHover;
+    sign4HoverOutline.visible = isHover;
+    wrap.style.cursor = isHover ? 'pointer' : 'default';
+  }
+});
+// ---- Fin iluminacion + resaltado (SOBRE MI) ----
+
+// ============= FIN CARTEL 3D #4 =============
+
+// ============= MARQUESINA DE CINE (techo del edificio 8, fila derecha) =============
+// Caja rectangular que ocupa exactamente la planta del edificio 8 y se apoya sobre su techo.
+// Cara frontal (hacia la calle, -X): textura de marquesina con el titulo de la pelicula.
+// Nombre "CINEMA DESIGN": panel independiente con volumen real, montado por delante de la fachada.
+// Resto de caras: panel oscuro con acentos de neon rojo y luces, como en la referencia fotografica.
+const MARQ_FRONT_TEXTURE_DATA_URI = "img/marquesina_frontal.jpg";
+const MARQ_NAME_TEXTURE_DATA_URI = "img/marquesina_nombre.jpg";
+const MARQ_SIDE_TEXTURE_DATA_URI = "img/marquesina_lateral.jpg";
+
+const MARQ_BUILDING_INDEX = 20; // edificio 8, fila derecha (contando desde 1)
+const marqBuilding = FOOTPRINTS[MARQ_BUILDING_INDEX];
+
+// misma logica que los carteles: en la fila derecha la fachada a la calle es el borde MENOR en X
+const marqFaceX_source = marqBuilding.x;
+const marqFaceX = (marqFaceX_source - halfMap) / SCALE; // borde de la caja mas cercano a la calle
+const marqWidthX = marqBuilding.w / SCALE;   // profundidad de la caja (igual que la planta del edificio)
+const marqWidthZ = marqBuilding.h / SCALE;   // anchura de la caja a lo largo de la fachada
+const marqCenterX = marqFaceX + marqWidthX / 2;
+const marqCenterZ_source = marqBuilding.y + marqBuilding.h / 2;
+const marqCenterZ = (marqCenterZ_source - MAP_H / 2) / SCALE;
+
+const MARQ_BOX_HEIGHT = marqBuilding.height / 2; // mitad de la altura del edificio 8
+const marqBoxCenterY = marqBuilding.height + MARQ_BOX_HEIGHT / 2; // apoyada justo sobre el techo
+
+const marqSideMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1616, roughness: 0.7, metalness: 0.1 });
+const marqFrontMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1616, roughness: 0.6, metalness: 0.1 });
+const marqTopMaterial = new THREE.MeshStandardMaterial({ color: 0x14100f, roughness: 0.8, metalness: 0.05 });
+
+// Orden de materiales de THREE.BoxGeometry: [+X, -X, +Y, -Y, +Z, -Z]
+const marqBoxGeo = new THREE.BoxGeometry(marqWidthX, MARQ_BOX_HEIGHT, marqWidthZ);
+const marqBoxMesh = new THREE.Mesh(marqBoxGeo, [
+  marqSideMaterial,  // +X (trasera, hacia el interior de la manzana)
+  marqFrontMaterial, // -X (frontal, hacia la calle)
+  marqTopMaterial,   // +Y (techo de la marquesina)
+  marqTopMaterial,   // -Y (base, apoyada en el techo del edificio, no se ve)
+  marqSideMaterial,  // +Z (lateral)
+  marqSideMaterial   // -Z (lateral)
+]);
+marqBoxMesh.position.set(marqCenterX, marqBoxCenterY, marqCenterZ);
+marqBoxMesh.castShadow = true;
+marqBoxMesh.receiveShadow = true;
+scene.add(marqBoxMesh);
+
+textureLoader.load(MARQ_FRONT_TEXTURE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  marqFrontMaterial.map = tex;
+  marqFrontMaterial.color.set(0xffffff);
+  marqFrontMaterial.needsUpdate = true;
+});
+textureLoader.load(MARQ_SIDE_TEXTURE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  tex.wrapS = THREE.RepeatWrapping;
+  marqSideMaterial.map = tex;
+  marqSideMaterial.color.set(0xffffff);
+  marqSideMaterial.needsUpdate = true;
+});
+
+// ---- Panel del nombre "CINEMA DESIGN", con volumen real (sobresale de la fachada) ----
+const MARQ_NAME_WIDTH_Z = marqWidthZ * 0.94;
+const MARQ_NAME_HEIGHT = MARQ_BOX_HEIGHT * 0.34;
+const MARQ_NAME_DEPTH = 0.09; // grosor real para que la tipografia no quede plana
+
+const marqNameMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1010, roughness: 0.45, metalness: 0.15 });
+const marqNameSideMat = new THREE.MeshStandardMaterial({ color: 0x120b0b, roughness: 0.6, metalness: 0.1 });
+const marqNameGeo = new THREE.BoxGeometry(MARQ_NAME_DEPTH, MARQ_NAME_HEIGHT, MARQ_NAME_WIDTH_Z);
+const marqNameMesh = new THREE.Mesh(marqNameGeo, [
+  marqNameSideMat, // +X (hacia la caja)
+  marqNameMaterial, // -X (frontal, cara visible con el nombre)
+  marqNameSideMat, marqNameSideMat, marqNameSideMat, marqNameSideMat
+]);
+const marqNameCenterY = marqBoxCenterY + MARQ_BOX_HEIGHT * 0.5 - MARQ_NAME_HEIGHT * 0.62;
+const marqNameCenterX = marqFaceX - MARQ_NAME_DEPTH / 2; // pegado y sobresaliendo de la fachada frontal
+marqNameMesh.position.set(marqNameCenterX, marqNameCenterY, marqCenterZ);
+marqNameMesh.castShadow = true;
+marqNameMesh.receiveShadow = true;
+scene.add(marqNameMesh);
+
+textureLoader.load(MARQ_NAME_TEXTURE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  marqNameMaterial.map = tex;
+  marqNameMaterial.color.set(0xffffff);
+  marqNameMaterial.needsUpdate = true;
+});
+
+// ---- Iluminacion nocturna interactiva: clic sobre la marquesina para encenderla/apagarla ----
+const MARQ_FRONT_EMISSIVE_DATA_URI = "img/marquesina_frontal_luz.jpg";
+const MARQ_NAME_EMISSIVE_DATA_URI = "img/marquesina_nombre_luz.jpg";
+const MARQ_SIDE_EMISSIVE_DATA_URI = "img/marquesina_lateral_luz.jpg";
+
+marqFrontMaterial.emissive = new THREE.Color(0xffffff);
+marqFrontMaterial.emissiveIntensity = 0;
+marqNameMaterial.emissive = new THREE.Color(0xffffff);
+marqNameMaterial.emissiveIntensity = 0;
+marqSideMaterial.emissive = new THREE.Color(0xffffff);
+marqSideMaterial.emissiveIntensity = 0;
+
+textureLoader.load(MARQ_FRONT_EMISSIVE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  marqFrontMaterial.emissiveMap = tex;
+  marqFrontMaterial.needsUpdate = true;
+});
+textureLoader.load(MARQ_NAME_EMISSIVE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  marqNameMaterial.emissiveMap = tex;
+  marqNameMaterial.needsUpdate = true;
+});
+textureLoader.load(MARQ_SIDE_EMISSIVE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  tex.wrapS = THREE.RepeatWrapping;
+  marqSideMaterial.emissiveMap = tex;
+  marqSideMaterial.needsUpdate = true;
+});
+
+// Luces calidas que se encienden junto con la marquesina, para que su brillo se refleje
+// tambien en la fachada, la calle y los edificios cercanos (como en la referencia nocturna)
+const marqGlowLights = [];
+function makeMarqGlow(x, y, z, intensity, distance) {
+  const lt = new THREE.PointLight(0xffb35c, 0, distance);
+  lt.position.set(x, y, z);
+  scene.add(lt);
+  marqGlowLights.push({ light: lt, targetIntensity: intensity });
+  return lt;
+}
+makeMarqGlow(marqCenterX - marqWidthX * 0.2, marqBoxCenterY + MARQ_BOX_HEIGHT * 0.05, marqCenterZ, 2.4, 6.5);
+makeMarqGlow(marqFaceX - 0.3, marqNameCenterY, marqCenterZ - marqWidthZ * 0.3, 1.8, 5);
+makeMarqGlow(marqFaceX - 0.3, marqNameCenterY, marqCenterZ + marqWidthZ * 0.3, 1.8, 5);
+
+let marqueeLit = false;
+const MARQ_EMISSIVE_ON = 1.6;
+
+function setMarqueeLit(lit) {
+  marqueeLit = lit;
+  const target = lit ? MARQ_EMISSIVE_ON : 0;
+  marqFrontMaterial.emissiveIntensity = target;
+  marqNameMaterial.emissiveIntensity = target;
+  marqSideMaterial.emissiveIntensity = target;
+  marqGlowLights.forEach(function (g) { g.light.intensity = lit ? g.targetIntensity : 0; });
+}
+
+const marqRaycaster = new THREE.Raycaster();
+const marqPointer = new THREE.Vector2();
+let marqPointerDownPos = null;
+wrap.addEventListener('pointerdown', function (e) {
+  marqPointerDownPos = { x: e.clientX, y: e.clientY };
+});
+wrap.addEventListener('pointerup', function (e) {
+  if (!marqPointerDownPos) return;
+  const dx = e.clientX - marqPointerDownPos.x;
+  const dy = e.clientY - marqPointerDownPos.y;
+  marqPointerDownPos = null;
+  if (Math.sqrt(dx * dx + dy * dy) > 8) return; // fue un arrastre de camara, no un clic
+  const rect = wrap.getBoundingClientRect();
+  marqPointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  marqPointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  marqRaycaster.setFromCamera(marqPointer, camera);
+  const hits = marqRaycaster.intersectObjects([marqBoxMesh, marqNameMesh], false);
+  if (hits.length > 0) {
+    setMarqueeLit(!marqueeLit);
+  }
+});
+// ---- Resaltado al pasar el cursor: confirma visualmente que la marquesina es interactiva ----
+const marqHoverOutlineMat = new THREE.LineBasicMaterial({ color: 0xffe27a, linewidth: 2, transparent: true, opacity: 0.95 });
+const marqBoxHoverOutline = new THREE.LineSegments(new THREE.EdgesGeometry(marqBoxGeo), marqHoverOutlineMat);
+marqBoxHoverOutline.position.copy(marqBoxMesh.position);
+marqBoxHoverOutline.visible = false;
+scene.add(marqBoxHoverOutline);
+const marqNameHoverOutline = new THREE.LineSegments(new THREE.EdgesGeometry(marqNameGeo), marqHoverOutlineMat);
+marqNameHoverOutline.position.copy(marqNameMesh.position);
+marqNameHoverOutline.visible = false;
+scene.add(marqNameHoverOutline);
+
+let marqHovering = false;
+window.addEventListener('pointermove', function (e) {
+  const rect = wrap.getBoundingClientRect();
+  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+    if (marqHovering) { marqHovering = false; marqBoxHoverOutline.visible = false; marqNameHoverOutline.visible = false; wrap.style.cursor = 'default'; }
+    return;
+  }
+  marqPointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  marqPointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  marqRaycaster.setFromCamera(marqPointer, camera);
+  const hits = marqRaycaster.intersectObjects([marqBoxMesh, marqNameMesh], false);
+  const isHover = hits.length > 0;
+  if (isHover !== marqHovering) {
+    marqHovering = isHover;
+    marqBoxHoverOutline.visible = isHover;
+    marqNameHoverOutline.visible = isHover;
+    wrap.style.cursor = isHover ? 'pointer' : 'default';
+  }
+});
+// ---- Fin resaltado al pasar el cursor ----
+
+// ---- Doble clic / doble toque sobre la marquesina: abre la pagina del cortometraje ----
+const MARQ_PAGE_URL = 'hombre-lluvias.html';
+const marqOverlay = document.createElement('div');
+marqOverlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#efe8da;display:none;';
+const marqFrame = document.createElement('iframe');
+marqFrame.title = 'El hombre que guardaba lluvias';
+marqFrame.style.cssText = 'width:100%;height:100%;border:0;display:block;';
+const marqClose = document.createElement('button');
+marqClose.textContent = '\u2715  Volver a la calle';
+marqClose.style.cssText = 'position:absolute;top:14px;right:14px;z-index:2;padding:10px 16px;border:0;border-radius:4px;background:#3a2417;color:#efe8da;font:600 12px/1 system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3);';
+marqOverlay.appendChild(marqFrame);
+marqOverlay.appendChild(marqClose);
+document.body.appendChild(marqOverlay);
+function openMarqPage() {
+  if (!marqFrame.getAttribute('src')) marqFrame.setAttribute('src', MARQ_PAGE_URL);
+  marqOverlay.style.display = 'block';
+}
+function closeMarqPage() { marqOverlay.style.display = 'none'; }
+marqClose.addEventListener('click', closeMarqPage);
+window.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeMarqPage(); });
+
+let marqTapDown = null;
+let marqLastTap = 0;
+wrap.addEventListener('pointerdown', function (e) {
+  marqTapDown = { x: e.clientX, y: e.clientY };
+});
+wrap.addEventListener('pointerup', function (e) {
+  if (!marqTapDown) return;
+  const moved = Math.hypot(e.clientX - marqTapDown.x, e.clientY - marqTapDown.y);
+  marqTapDown = null;
+  if (moved > 8) return;
+  const rect = wrap.getBoundingClientRect();
+  marqPointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  marqPointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  marqRaycaster.setFromCamera(marqPointer, camera);
+  const hits = marqRaycaster.intersectObjects([marqBoxMesh, marqNameMesh], false);
+  if (hits.length === 0) { marqLastTap = 0; return; }
+  const now = performance.now();
+  if (now - marqLastTap < 400) { marqLastTap = 0; openMarqPage(); }
+  else { marqLastTap = now; }
+});
+// ---- Fin doble clic marquesina ----
+
+// ============= FIN MARQUESINA DE CINE =============
+
+// ============= CARTEL 3D #5 COLGADO EN LA PARED (bandera, DESIGN ESTUDIO, edificio 8 izquierda) =============
+const SIGN5_TEXTURE_DATA_URI = "img/cartel5_design_estudio.jpg";
+const SIGN5_BUILDING_INDEX = 7; // edificio 8, fila izquierda (contando desde 1)
+const sign5Building = FOOTPRINTS[SIGN5_BUILDING_INDEX];
+const sign5FaceX_source = sign5Building.x + sign5Building.w; // borde de la fachada (hacia la calle), fila izquierda
+const sign5FaceX = (sign5FaceX_source - halfMap) / SCALE;
+const sign5CenterZ_source = sign5Building.y + sign5Building.h / 2;
+const sign5CenterZ = (sign5CenterZ_source - MAP_H / 2) / SCALE;
+const SIGN5_Z_OFFSET = 0.12; // mas centrado en la pared amarilla, alejado del balcon
+
+const SIGN5_ASPECT = 880 / 823; // ancho/alto de la imagen del cartel recortada
+const SIGN5_HEIGHT_WORLD = 0.46;
+const SIGN5_WIDTH_X_WORLD = SIGN5_HEIGHT_WORLD * SIGN5_ASPECT;
+const SIGN5_DEPTH_Z_WORLD = 0.045; // mismo grosor que los demas carteles (tiene volumen, no es plano)
+const SIGN5_MOUNT_Y = 1.85; // altura aproximada de la primera linea de balcones
+const SIGN5_ARM_LENGTH = 0.1;
+
+const sign5Geo = new THREE.BoxGeometry(SIGN5_WIDTH_X_WORLD, SIGN5_HEIGHT_WORLD, SIGN5_DEPTH_Z_WORLD);
+const sign5Mesh = new THREE.Mesh(sign5Geo, [signFrameMaterial, signFrameMaterial, signFrameMaterial, signFrameMaterial, signFrameMaterial, signFrameMaterial]);
+const sign5CenterX = sign5FaceX + SIGN5_ARM_LENGTH + SIGN5_WIDTH_X_WORLD / 2;
+sign5Mesh.position.set(sign5CenterX, SIGN5_MOUNT_Y, sign5CenterZ + SIGN5_Z_OFFSET);
+sign5Mesh.castShadow = true;
+sign5Mesh.receiveShadow = true;
+scene.add(sign5Mesh);
+const sign5Edges = new THREE.EdgesGeometry(sign5Geo);
+sign5Mesh.add(new THREE.LineSegments(sign5Edges, edgeMaterial));
+
+// Agarre en "L", como en la referencia: poste vertical atornillado a la pared + brazo horizontal
+// en la parte de arriba + dos varillas que cuelgan el cartel desde el brazo (no un brazo que
+// atraviesa el cartel por el centro).
+const sign5PanelTopY = SIGN5_MOUNT_Y + SIGN5_HEIGHT_WORLD / 2;
+const SIGN5_ROD_LENGTH = 0.09;
+const sign5ArmY = sign5PanelTopY + SIGN5_ROD_LENGTH;
+const sign5PanelLeftX = sign5FaceX + SIGN5_ARM_LENGTH; // borde del cartel mas cercano a la pared
+const sign5PanelRightX = sign5PanelLeftX + SIGN5_WIDTH_X_WORLD; // borde exterior del cartel
+const sign5ArmOuterX = sign5PanelRightX + 0.035; // el brazo sobresale un poco mas alla del cartel
+const sign5ArmLength_total = sign5ArmOuterX - sign5FaceX;
+const sign5PostLength = SIGN5_HEIGHT_WORLD * 1.05;
+
+// poste vertical, pegado/atornillado a la pared
+const post5Geo = new THREE.BoxGeometry(0.045, sign5PostLength, 0.045);
+const post5Mesh = new THREE.Mesh(post5Geo, bracketMat);
+post5Mesh.position.set(sign5FaceX + 0.015, sign5ArmY - sign5PostLength / 2 + 0.05, sign5CenterZ + SIGN5_Z_OFFSET);
+scene.add(post5Mesh);
+
+// placas/tornillos redondos de anclaje a la pared (arriba y abajo del poste)
+const bolt5Geo = new THREE.CylinderGeometry(0.028, 0.028, 0.015, 16);
+[0.06, -sign5PostLength + 0.09].forEach(function (dy) {
+  const boltMesh = new THREE.Mesh(bolt5Geo, bracketMat);
+  boltMesh.rotation.z = Math.PI / 2;
+  boltMesh.position.set(sign5FaceX + 0.005, sign5ArmY + dy, sign5CenterZ + SIGN5_Z_OFFSET);
+  scene.add(boltMesh);
+});
+
+// brazo horizontal, desde lo alto del poste hacia afuera de la pared
+const arm5Geo = new THREE.BoxGeometry(sign5ArmLength_total, 0.045, 0.045);
+const arm5Mesh = new THREE.Mesh(arm5Geo, bracketMat);
+arm5Mesh.position.set(sign5FaceX + sign5ArmLength_total / 2, sign5ArmY, sign5CenterZ + SIGN5_Z_OFFSET);
+scene.add(arm5Mesh);
+
+// dos varillas verticales que cuelgan el cartel desde el brazo
+const rod5Geo = new THREE.CylinderGeometry(0.014, 0.014, SIGN5_ROD_LENGTH, 12);
+[sign5PanelLeftX + 0.05, sign5PanelRightX - 0.05].forEach(function (rx) {
+  const rodMesh = new THREE.Mesh(rod5Geo, bracketMat);
+  rodMesh.position.set(rx, sign5PanelTopY + SIGN5_ROD_LENGTH / 2, sign5CenterZ + SIGN5_Z_OFFSET);
+  scene.add(rodMesh);
+});
+
+const sign5FaceMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.4, metalness: 0.3 });
+sign5Mesh.material[4] = sign5FaceMaterial;
+sign5Mesh.material[5] = sign5FaceMaterial;
+sign5Mesh.material.needsUpdate = true;
+textureLoader.load(SIGN5_TEXTURE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  sign5FaceMaterial.map = tex;
+  sign5FaceMaterial.needsUpdate = true;
+});
+
+// ---- Iluminacion interior calida + resaltado al pasar el cursor (cartel DESIGN ESTUDIO) ----
+const SIGN5_EMISSIVE_DATA_URI = "img/cartel5_design_estudio_luz.jpg";
+sign5FaceMaterial.emissive = new THREE.Color(0xffb35c);
+sign5FaceMaterial.emissiveIntensity = 0;
+textureLoader.load(SIGN5_EMISSIVE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  sign5FaceMaterial.emissiveMap = tex;
+  sign5FaceMaterial.needsUpdate = true;
+});
+
+// halo calido que se enciende junto con el cartel, iluminando la pared amarilla alrededor
+const sign5GlowLight = new THREE.PointLight(0xffb35c, 0, 2.2);
+sign5GlowLight.position.set(sign5CenterX, SIGN5_MOUNT_Y, sign5CenterZ + SIGN5_Z_OFFSET);
+scene.add(sign5GlowLight);
+
+let sign5Lit = false;
+function setSign5Lit(lit) {
+  sign5Lit = lit;
+  sign5FaceMaterial.emissiveIntensity = lit ? 1.7 : 0;
+  sign5GlowLight.intensity = lit ? 1.6 : 0;
+}
+
+const sign5HoverOutlineMat = new THREE.LineBasicMaterial({ color: 0xffe27a, linewidth: 2, transparent: true, opacity: 0.95 });
+const sign5HoverOutline = new THREE.LineSegments(new THREE.EdgesGeometry(sign5Geo), sign5HoverOutlineMat);
+sign5HoverOutline.position.copy(sign5Mesh.position);
+sign5HoverOutline.visible = false;
+scene.add(sign5HoverOutline);
+
+const sign5Raycaster = new THREE.Raycaster();
+const sign5Pointer = new THREE.Vector2();
+let sign5Hovering = false;
+let sign5PointerDownPos = null;
+
+wrap.addEventListener('pointerdown', function (e) {
+  sign5PointerDownPos = { x: e.clientX, y: e.clientY };
+});
+wrap.addEventListener('pointerup', function (e) {
+  if (!sign5PointerDownPos) return;
+  const dx = e.clientX - sign5PointerDownPos.x;
+  const dy = e.clientY - sign5PointerDownPos.y;
+  sign5PointerDownPos = null;
+  if (Math.sqrt(dx * dx + dy * dy) > 8) return; // fue un arrastre de camara, no un clic
+  const rect = wrap.getBoundingClientRect();
+  sign5Pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  sign5Pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  sign5Raycaster.setFromCamera(sign5Pointer, camera);
+  const hits = sign5Raycaster.intersectObject(sign5Mesh, false);
+  if (hits.length > 0) {
+    setSign5Lit(!sign5Lit);
+  }
+});
+
+window.addEventListener('pointermove', function (e) {
+  const rect = wrap.getBoundingClientRect();
+  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+    if (sign5Hovering) { sign5Hovering = false; sign5HoverOutline.visible = false; }
+    return;
+  }
+  sign5Pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  sign5Pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  sign5Raycaster.setFromCamera(sign5Pointer, camera);
+  const hits = sign5Raycaster.intersectObject(sign5Mesh, false);
+  const isHover = hits.length > 0;
+  if (isHover !== sign5Hovering) {
+    sign5Hovering = isHover;
+    sign5HoverOutline.visible = isHover;
+    wrap.style.cursor = isHover ? 'pointer' : (marqHovering ? 'pointer' : 'default');
+  }
+});
+// ---- Fin iluminacion interior + resaltado (DESIGN ESTUDIO) ----
+
+// ============= FIN CARTEL 3D #5 =============
+
+// ============= CARTEL 3D #6 COLGADO EN LA PARED (bandera, ILLUSTRATIONS / ESTUDIO DE DISEÑO, edificio 11 izquierda) =============
+const SIGN6_TEXTURE_DATA_URI = "img/cartel6_illustrations.jpg";
+const SIGN6_BUILDING_INDEX = 10; // edificio 11, fila izquierda (contando desde 1)
+const sign6Building = FOOTPRINTS[SIGN6_BUILDING_INDEX];
+const sign6FaceX_source = sign6Building.x + sign6Building.w; // borde de la fachada (hacia la calle), fila izquierda
+const sign6FaceX = (sign6FaceX_source - halfMap) / SCALE;
+const sign6CenterZ_source = sign6Building.y + sign6Building.h / 2;
+const sign6CenterZ = (sign6CenterZ_source - MAP_H / 2) / SCALE;
+const SIGN6_Z_OFFSET = 0.85; // en la superficie plana de la pared amarilla, lejos de la ventana
+
+const SIGN6_ASPECT = 442 / 1975; // ancho/alto de la imagen del cartel recortada (formato vertical alargado)
+const SIGN6_HEIGHT_WORLD = 0.85;
+const SIGN6_WIDTH_X_WORLD = SIGN6_HEIGHT_WORLD * SIGN6_ASPECT;
+const SIGN6_DEPTH_Z_WORLD = 0.045; // grosor proporcional, igual que los demas carteles (tiene volumen real)
+const SIGN6_MOUNT_Y = 2.3; // altura aproximada de la primera linea de balcones
+const SIGN6_ARM_LENGTH = 0.1;
+
+const sign6Geo = new THREE.BoxGeometry(SIGN6_WIDTH_X_WORLD, SIGN6_HEIGHT_WORLD, SIGN6_DEPTH_Z_WORLD);
+const sign6Mesh = new THREE.Mesh(sign6Geo, [signFrameMaterial, signFrameMaterial, signFrameMaterial, signFrameMaterial, signFrameMaterial, signFrameMaterial]);
+const sign6CenterX = sign6FaceX + SIGN6_ARM_LENGTH + SIGN6_WIDTH_X_WORLD / 2;
+sign6Mesh.position.set(sign6CenterX, SIGN6_MOUNT_Y, sign6CenterZ + SIGN6_Z_OFFSET);
+sign6Mesh.castShadow = true;
+sign6Mesh.receiveShadow = true;
+scene.add(sign6Mesh);
+const sign6Edges = new THREE.EdgesGeometry(sign6Geo);
+sign6Mesh.add(new THREE.LineSegments(sign6Edges, edgeMaterial));
+
+// Agarre en "L" con dos puntos de anclaje a la pared, igual que en la referencia: poste vertical
+// atornillado a la pared (con dos placas/tornillos, arriba y abajo) + brazo horizontal arriba +
+// dos varillas que cuelgan el cartel desde el brazo.
+const sign6PanelTopY = SIGN6_MOUNT_Y + SIGN6_HEIGHT_WORLD / 2;
+const SIGN6_ROD_LENGTH = 0.09;
+const sign6ArmY = sign6PanelTopY + SIGN6_ROD_LENGTH;
+const sign6PanelLeftX = sign6FaceX + SIGN6_ARM_LENGTH;
+const sign6PanelRightX = sign6PanelLeftX + SIGN6_WIDTH_X_WORLD;
+const sign6ArmOuterX = sign6PanelRightX + 0.035;
+const sign6ArmLength_total = sign6ArmOuterX - sign6FaceX;
+const sign6PostLength = SIGN6_HEIGHT_WORLD * 1.05;
+
+const post6Geo = new THREE.BoxGeometry(0.045, sign6PostLength, 0.045);
+const post6Mesh = new THREE.Mesh(post6Geo, bracketMat);
+post6Mesh.position.set(sign6FaceX + 0.015, sign6ArmY - sign6PostLength / 2 + 0.05, sign6CenterZ + SIGN6_Z_OFFSET);
+scene.add(post6Mesh);
+
+const bolt6Geo = new THREE.CylinderGeometry(0.028, 0.028, 0.015, 16);
+[0.06, -sign6PostLength + 0.09].forEach(function (dy) {
+  const boltMesh = new THREE.Mesh(bolt6Geo, bracketMat);
+  boltMesh.rotation.z = Math.PI / 2;
+  boltMesh.position.set(sign6FaceX + 0.005, sign6ArmY + dy, sign6CenterZ + SIGN6_Z_OFFSET);
+  scene.add(boltMesh);
+});
+
+const arm6Geo = new THREE.BoxGeometry(sign6ArmLength_total, 0.045, 0.045);
+const arm6Mesh = new THREE.Mesh(arm6Geo, bracketMat);
+arm6Mesh.position.set(sign6FaceX + sign6ArmLength_total / 2, sign6ArmY, sign6CenterZ + SIGN6_Z_OFFSET);
+scene.add(arm6Mesh);
+
+const rod6Geo = new THREE.CylinderGeometry(0.014, 0.014, SIGN6_ROD_LENGTH, 12);
+[sign6PanelLeftX + 0.05, sign6PanelRightX - 0.05].forEach(function (rx) {
+  const rodMesh = new THREE.Mesh(rod6Geo, bracketMat);
+  rodMesh.position.set(rx, sign6PanelTopY + SIGN6_ROD_LENGTH / 2, sign6CenterZ + SIGN6_Z_OFFSET);
+  scene.add(rodMesh);
+});
+
+const sign6FaceMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.4, metalness: 0.3 });
+sign6Mesh.material[4] = sign6FaceMaterial;
+sign6Mesh.material[5] = sign6FaceMaterial;
+sign6Mesh.material.needsUpdate = true;
+textureLoader.load(SIGN6_TEXTURE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  sign6FaceMaterial.map = tex;
+  sign6FaceMaterial.needsUpdate = true;
+});
+
+// ---- Iluminacion interior + exterior calida, y resaltado al pasar el cursor (cartel ILLUSTRATIONS, edificio 11) ----
+const SIGN6_EMISSIVE_DATA_URI = "img/cartel6_illustrations_luz.jpg";
+sign6FaceMaterial.emissive = new THREE.Color(0xffffff);
+sign6FaceMaterial.emissiveIntensity = 0;
+textureLoader.load(SIGN6_EMISSIVE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  sign6FaceMaterial.emissiveMap = tex;
+  sign6FaceMaterial.needsUpdate = true;
+});
+
+const sign6GlowLight = new THREE.PointLight(0xffb35c, 0, 2.2);
+sign6GlowLight.position.set(sign6CenterX, SIGN6_MOUNT_Y, sign6CenterZ + SIGN6_Z_OFFSET);
+scene.add(sign6GlowLight);
+
+let sign6Lit = false;
+function setSign6Lit(lit) {
+  sign6Lit = lit;
+  sign6FaceMaterial.emissiveIntensity = lit ? 1.7 : 0;
+  sign6GlowLight.intensity = lit ? 1.6 : 0;
+}
+
+const sign6HoverOutlineMat = new THREE.LineBasicMaterial({ color: 0xffe27a, linewidth: 2, transparent: true, opacity: 0.95 });
+const sign6HoverOutline = new THREE.LineSegments(new THREE.EdgesGeometry(sign6Geo), sign6HoverOutlineMat);
+sign6HoverOutline.position.copy(sign6Mesh.position);
+sign6HoverOutline.visible = false;
+scene.add(sign6HoverOutline);
+
+const sign6Raycaster = new THREE.Raycaster();
+const sign6Pointer = new THREE.Vector2();
+let sign6Hovering = false;
+let sign6PointerDownPos = null;
+
+wrap.addEventListener('pointerdown', function (e) {
+  sign6PointerDownPos = { x: e.clientX, y: e.clientY };
+});
+wrap.addEventListener('pointerup', function (e) {
+  if (!sign6PointerDownPos) return;
+  const dx = e.clientX - sign6PointerDownPos.x;
+  const dy = e.clientY - sign6PointerDownPos.y;
+  sign6PointerDownPos = null;
+  if (Math.sqrt(dx * dx + dy * dy) > 8) return; // fue un arrastre de camara, no un clic
+  const rect = wrap.getBoundingClientRect();
+  sign6Pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  sign6Pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  sign6Raycaster.setFromCamera(sign6Pointer, camera);
+  const hits = sign6Raycaster.intersectObject(sign6Mesh, false);
+  if (hits.length > 0) {
+    setSign6Lit(!sign6Lit);
+  }
+});
+
+window.addEventListener('pointermove', function (e) {
+  const rect = wrap.getBoundingClientRect();
+  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+    if (sign6Hovering) { sign6Hovering = false; sign6HoverOutline.visible = false; }
+    return;
+  }
+  sign6Pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  sign6Pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  sign6Raycaster.setFromCamera(sign6Pointer, camera);
+  const hits = sign6Raycaster.intersectObject(sign6Mesh, false);
+  const isHover = hits.length > 0;
+  if (isHover !== sign6Hovering) {
+    sign6Hovering = isHover;
+    sign6HoverOutline.visible = isHover;
+    wrap.style.cursor = isHover ? 'pointer' : 'default';
+  }
+});
+// ---- Fin iluminacion + resaltado (ILLUSTRATIONS) ----
+
+// ============= FIN CARTEL 3D #6 =============
+
+// ============= TEXTURA DE TECHO (edificio 13, fila derecha) =============
+// Cubre por completo el blanco del techo de ese edificio con la textura de piedra en marron.
+const ROOF13_TEXTURE_DATA_URI = "img/techo_edificio13.jpg";
+const ROOF13_BUILDING_INDEX = 25; // edificio 13, fila derecha (contando desde 1)
+const roof13Building = FOOTPRINTS[ROOF13_BUILDING_INDEX];
+const roof13WidthX = roof13Building.w / SCALE;
+const roof13WidthZ = roof13Building.h / SCALE;
+const roof13CenterX = (roof13Building.x + roof13Building.w / 2 - halfMap) / SCALE;
+const roof13CenterZ = (roof13Building.y + roof13Building.h / 2 - MAP_H / 2) / SCALE;
+const ROOF13_THICKNESS = 0.02;
+const roof13CenterY = roof13Building.height + ROOF13_THICKNESS / 2 + 0.003; // justo encima del techo, sin z-fighting
+
+const roof13SideMat = new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 0.85, metalness: 0.05 });
+const roof13TopMat = new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 0.85, metalness: 0.05 });
+const roof13Geo = new THREE.BoxGeometry(roof13WidthX, ROOF13_THICKNESS, roof13WidthZ);
+const roof13Mesh = new THREE.Mesh(roof13Geo, [roof13SideMat, roof13SideMat, roof13TopMat, roof13SideMat, roof13SideMat, roof13SideMat]);
+roof13Mesh.position.set(roof13CenterX, roof13CenterY, roof13CenterZ);
+roof13Mesh.castShadow = true;
+roof13Mesh.receiveShadow = true;
+scene.add(roof13Mesh);
+
+textureLoader.load(ROOF13_TEXTURE_DATA_URI, function (tex) {
+  tex.encoding = THREE.sRGBEncoding;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 2);
+  roof13TopMat.map = tex;
+  roof13TopMat.color.set(0xffffff);
+  roof13TopMat.needsUpdate = true;
+});
+// ============= FIN TEXTURA DE TECHO (edificio 13) =============
+
+// ============= SEÑALIZACION FLOTANTE DE PUNTOS DE INTERES =============
+// Iconos flotantes sobre cada cartel y la marquesina, para indicar al usuario
+// que son elementos interactivos con los que puede pararse a interactuar.
+function makePointOfInterestTexture() {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  const cx = size / 2, cy = size / 2;
+
+  // halo suave
+  const grad = ctx.createRadialGradient(cx, cy, size * 0.1, cx, cy, size * 0.5);
+  grad.addColorStop(0, 'rgba(255, 200, 90, 0.55)');
+  grad.addColorStop(1, 'rgba(255, 200, 90, 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  // circulo principal
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 0.30, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(24, 18, 12, 0.92)';
+  ctx.fill();
+  ctx.lineWidth = size * 0.045;
+  ctx.strokeStyle = '#ffce6b';
+  ctx.stroke();
+
+  // signo "i" de interaccion
+  ctx.fillStyle = '#ffce6b';
+  ctx.beginPath();
+  ctx.arc(cx, cy - size * 0.115, size * 0.045, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(cx - size * 0.035, cy - size * 0.03, size * 0.07, size * 0.20);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.encoding = THREE.sRGBEncoding;
+  return tex;
+}
+
+const poiTexture = makePointOfInterestTexture();
+const poiMaterialTemplate = { map: poiTexture, transparent: true, depthWrite: false, sizeAttenuation: true };
+const pointsOfInterest = [];
+
+function addPointOfInterest(targetMesh, topY, options) {
+  options = options || {};
+  const mat = new THREE.SpriteMaterial(Object.assign({}, poiMaterialTemplate));
+  const sprite = new THREE.Sprite(mat);
+  const scale = options.scale || 0.22;
+  sprite.scale.set(scale, scale, scale);
+  sprite.position.set(targetMesh.position.x, topY + 0.16, targetMesh.position.z);
+  scene.add(sprite);
+  pointsOfInterest.push({
+    sprite: sprite,
+    baseY: topY + 0.16,
+    phase: Math.random() * Math.PI * 2,
+    litRef: options.litRef || null
+  });
+  return sprite;
+}
+
+// Un punto de interes sobre cada cartel y sobre la marquesina
+addPointOfInterest(signMesh, SIGN_MOUNT_Y + SIGN_HEIGHT_WORLD / 2, { litRef: () => sign1Lit });
+addPointOfInterest(sign2Mesh, SIGN2_MOUNT_Y + SIGN2_HEIGHT_WORLD / 2, { litRef: () => sign2Lit });
+addPointOfInterest(sign4Mesh, SIGN4_MOUNT_Y + SIGN4_HEIGHT_WORLD / 2, { scale: 0.28, litRef: () => sign4Lit });
+addPointOfInterest(sign5Mesh, SIGN5_MOUNT_Y + SIGN5_HEIGHT_WORLD / 2, { litRef: () => sign5Lit });
+addPointOfInterest(sign6Mesh, SIGN6_MOUNT_Y + SIGN6_HEIGHT_WORLD / 2, { litRef: () => sign6Lit });
+addPointOfInterest(marqBoxMesh, marqNameCenterY + MARQ_NAME_HEIGHT / 2 + 0.55, { scale: 0.32, litRef: () => marqueeLit });
+
+function updatePointsOfInterest(elapsed) {
+  for (let i = 0; i < pointsOfInterest.length; i++) {
+    const poi = pointsOfInterest[i];
+    const bob = Math.sin(elapsed * 1.6 + poi.phase) * 0.05;
+    poi.sprite.position.y = poi.baseY + bob;
+    const pulse = 0.85 + Math.sin(elapsed * 2.2 + poi.phase) * 0.15;
+    const isLit = poi.litRef ? poi.litRef() : false;
+    poi.sprite.material.opacity = isLit ? 0.35 : pulse;
+  }
+}
+// ============= FIN SEÑALIZACION FLOTANTE =============
+
+
+
+
+
+
+
+
+
+
+// Muro al fondo de la calle (paseo maritimo), con textura de piedra en frontal, superior y laterales
+const WALL_TEXTURE_URI = "img/muro_fondo.jpg";
+addPlainWall(0, -136, MAP_W, 32, 0.5, 0x9a9a98, WALL_TEXTURE_URI);
+
+// Mar 3D al fondo con volumen: bloque de agua con altura similar al muro,
+// superficie superior animada y frontal texturizado
+let updateSea = function () {};
+(function () {
+  const fx = -1600, fy = -12136, fw = MAP_W + 3200, fh = 12000;
+  const s = toScene(fx, fy, fw, fh);
+  const seaHeight = 0.5;
+  const segX = 220, segZ = 180;
+
+  const bodyGeo = new THREE.BoxGeometry(s.W, seaHeight, s.D);
+  const sideMat = new THREE.MeshStandardMaterial({
+    color: 0x7fa5b8,
+    roughness: 0.42,
+    metalness: 0.02
+  });
+  const topBodyMat = new THREE.MeshStandardMaterial({
+    color: 0x86abc0,
+    roughness: 0.30,
+    metalness: 0.03
+  });
+  const bottomMat = new THREE.MeshStandardMaterial({
+    color: 0x678393,
+    roughness: 0.85,
+    metalness: 0
+  });
+  const frontBodyMat = new THREE.MeshStandardMaterial({
+    color: 0x82a9bc,
+    roughness: 0.30,
+    metalness: 0.03
+  });
+  const body = new THREE.Mesh(bodyGeo, [sideMat, sideMat, topBodyMat, bottomMat, frontBodyMat, frontBodyMat]);
+  body.position.set(s.X, seaHeight / 2, s.Z);
+  body.receiveShadow = true;
+  scene.add(body);
+
+  const topGeo = new THREE.PlaneGeometry(s.W, s.D, segX, segZ);
+  topGeo.rotateX(-Math.PI / 2);
+  const topPos = topGeo.attributes.position;
+  const topBase = topPos.array.slice();
+  const topMat = new THREE.MeshStandardMaterial({
+    color: 0x86abc0,
+    roughness: 0.20,
+    metalness: 0.04
+  });
+  const topMesh = new THREE.Mesh(topGeo, topMat);
+  topMesh.position.set(s.X, seaHeight + 0.015, s.Z);
+  topMesh.receiveShadow = true;
+  scene.add(topMesh);
+
+  const frontGeo = new THREE.PlaneGeometry(s.W, seaHeight, 140, 24);
+  const frontPos = frontGeo.attributes.position;
+  const frontBase = frontPos.array.slice();
+  const frontMat = new THREE.MeshStandardMaterial({
+    color: 0x82a9bc,
+    roughness: 0.26,
+    metalness: 0.03,
+    side: THREE.DoubleSide
+  });
+  const frontMesh = new THREE.Mesh(frontGeo, frontMat);
+  frontMesh.position.set(s.X, seaHeight / 2, s.Z + s.D / 2 + 0.01);
+  frontMesh.receiveShadow = true;
+  scene.add(frontMesh);
+
+  const hazeGeo = new THREE.PlaneGeometry(s.W * 1.15, 48);
+  const hazeMat = new THREE.MeshBasicMaterial({
+    color: 0xb9d2e0,
+    transparent: true,
+    opacity: 0.24,
+    depthWrite: false
+  });
+  const haze = new THREE.Mesh(hazeGeo, hazeMat);
+  haze.position.set(s.X, 22, s.Z - s.D / 2 + 18);
+  scene.add(haze);
+
+  const waveSpeedA = 1.22;
+  const waveSpeedB = 0.88;
+  const waveSpeedC = 0.62;
+
+  function animateSeaTop(time) {
+    const arr = topPos.array;
+    for (let i = 0; i < arr.length; i += 3) {
+      const x = topBase[i];
+      const z = topBase[i + 2];
+      const wave =
+        Math.sin(x * 0.020 + time * waveSpeedA) * 0.22 +
+        Math.cos(z * 0.016 - time * waveSpeedB) * 0.16 +
+        Math.sin((x + z) * 0.011 + time * waveSpeedC) * 0.10;
+      arr[i + 1] = wave;
+    }
+    topPos.needsUpdate = true;
+    topGeo.computeVertexNormals();
+  }
+
+  function animateSeaFront(time) {
+    const arr = frontPos.array;
+    for (let i = 0; i < arr.length; i += 3) {
+      const x = frontBase[i];
+      const y = frontBase[i + 1];
+      const ripple =
+        Math.sin(x * 0.030 + time * 1.18) * 0.10 +
+        Math.cos((x + y) * 0.050 - time * 0.92) * 0.05;
+      arr[i + 2] = ripple;
+    }
+    frontPos.needsUpdate = true;
+    frontGeo.computeVertexNormals();
+  }
+
+  updateSea = function (time) {
+    animateSeaTop(time);
+    animateSeaFront(time);
+  };
+
+  function drawWrappedSeaImage(ctx, img, offsetX, offsetY, size) {
+    const ox = ((offsetX % size) + size) % size;
+    const oy = ((offsetY % size) + size) % size;
+    ctx.drawImage(img, -ox, -oy, size, size);
+    ctx.drawImage(img, size - ox, -oy, size, size);
+    ctx.drawImage(img, -ox, size - oy, size, size);
+    ctx.drawImage(img, size - ox, size - oy, size, size);
+  }
+
+  function buildUniformSeaTexture(sourceImage) {
+    const size = 1024;
+
+    const baseCanvas = document.createElement('canvas');
+    baseCanvas.width = baseCanvas.height = size;
+    const baseCtx = baseCanvas.getContext('2d');
+    baseCtx.filter = 'blur(2.4px) saturate(0.92)';
+    drawWrappedSeaImage(baseCtx, sourceImage, 0, 0, size);
+    baseCtx.filter = 'none';
+
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(baseCanvas, 0, 0);
+
+    ctx.globalAlpha = 0.16;
+    drawWrappedSeaImage(ctx, baseCanvas, Math.round(size * 0.37), Math.round(size * 0.18), size);
+    ctx.globalAlpha = 0.12;
+    drawWrappedSeaImage(ctx, baseCanvas, Math.round(size * 0.58), Math.round(size * 0.52), size);
+    ctx.globalAlpha = 1;
+
+    const seamBand = Math.round(size * 0.14);
+    for (let i = 0; i < seamBand; i++) {
+      const blend = 0.55 * (1 - i / Math.max(1, seamBand - 1));
+      ctx.globalAlpha = blend;
+      ctx.drawImage(baseCanvas, 0, size - seamBand + i, size, 1, 0, i, size, 1);
+      ctx.drawImage(baseCanvas, 0, i, size, 1, 0, size - seamBand + i, size, 1);
+    }
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = '#8fb2c4';
+    ctx.fillRect(0, 0, size, size);
+    ctx.globalAlpha = 1;
+
+    const seaTexture = new THREE.CanvasTexture(canvas);
+    seaTexture.encoding = THREE.sRGBEncoding;
+    seaTexture.wrapS = THREE.MirroredRepeatWrapping;
+    seaTexture.wrapT = THREE.MirroredRepeatWrapping;
+    if (renderer.capabilities && renderer.capabilities.getMaxAnisotropy) {
+      seaTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    }
+    return seaTexture;
+  }
+
+  const SEA_TEXTURE_URI = "img/mar.jpg";
+
+  textureLoader.load(SEA_TEXTURE_URI, function (tex) {
+    const topTex = buildUniformSeaTexture(tex.image);
+    topTex.repeat.set(Math.max(14, Math.round(s.W / 48)), Math.max(24, Math.round(s.D / 34)));
+    topTex.offset.set(0, 0);
+
+    const frontTex = buildUniformSeaTexture(tex.image);
+    frontTex.repeat.set(Math.max(14, Math.round(s.W / 48)), 1.35);
+    frontTex.offset.set(0, 0);
+
+    topMat.map = topTex;
+    topMat.needsUpdate = true;
+    topBodyMat.map = topTex;
+    topBodyMat.needsUpdate = true;
+
+    frontMat.map = frontTex;
+    frontMat.needsUpdate = true;
+    frontBodyMat.map = frontTex;
+    frontBodyMat.needsUpdate = true;
+
+    tex.dispose();
+
+    updateSea = function (time) {
+      topTex.offset.x = (time * 0.0028) % 1;
+      topTex.offset.y = (time * 0.0085) % 1;
+      frontTex.offset.x = (time * 0.0032) % 1;
+      frontTex.offset.y = (time * 0.0048) % 1;
+      animateSeaTop(time);
+      animateSeaFront(time);
+    };
+  });
+})();;
+
+let yaw = 0, pitch = 0, targetYaw = 0, targetPitch = 0;
+let dragging = false, originX = 0, originY = 0, moveX = 0, moveY = 0;
+const maxR = 45;
+
+function showJoy(x, y) {
+  joyBase.style.left = x + 'px'; joyBase.style.top = y + 'px'; joyBase.style.display = 'block';
+  joyDot.style.left = x + 'px'; joyDot.style.top = y + 'px'; joyDot.style.display = 'block';
+}
+function hideJoy() {
+  joyBase.style.display = 'none'; joyDot.style.display = 'none';
+  moveX = 0; moveY = 0;
+}
+
+wrap.addEventListener('pointerdown', function (e) {
+  dragging = true;
+  originX = e.clientX; originY = e.clientY;
+  showJoy(originX, originY);
+  wrap.setPointerCapture(e.pointerId);
+});
+window.addEventListener('pointermove', function (e) {
+  if (!dragging) {
+    const nx = (e.clientX / window.innerWidth) * 2 - 1;
+    const ny = (e.clientY / window.innerHeight) * 2 - 1;
+    targetYaw = -nx * 0.9;
+    targetPitch = Math.max(-0.4, Math.min(0.4, -ny * 0.4));
+    return;
+  }
+  let dx = e.clientX - originX, dy = e.clientY - originY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist > maxR) { dx = dx / dist * maxR; dy = dy / dist * maxR; }
+  joyDot.style.left = (originX + dx) + 'px';
+  joyDot.style.top = (originY + dy) + 'px';
+  moveX = dx / maxR;
+  moveY = -dy / maxR;
+});
+window.addEventListener('pointerup', function () {
+  dragging = false;
+  hideJoy();
+});
+
+// Flechas del teclado: desplazamiento rapido (adelante/atras/izquierda/derecha)
+const keyMoveState = { forward: false, backward: false, left: false, right: false };
+window.addEventListener('keydown', function (e) {
+  switch (e.key) {
+    case 'ArrowUp': keyMoveState.forward = true; e.preventDefault(); break;
+    case 'ArrowDown': keyMoveState.backward = true; e.preventDefault(); break;
+    case 'ArrowLeft': keyMoveState.left = true; e.preventDefault(); break;
+    case 'ArrowRight': keyMoveState.right = true; e.preventDefault(); break;
+  }
+});
+window.addEventListener('keyup', function (e) {
+  switch (e.key) {
+    case 'ArrowUp': keyMoveState.forward = false; break;
+    case 'ArrowDown': keyMoveState.backward = false; break;
+    case 'ArrowLeft': keyMoveState.left = false; break;
+    case 'ArrowRight': keyMoveState.right = false; break;
+  }
+});
+
+function onResize() {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+window.addEventListener('resize', onResize);
+
+const clock = new THREE.Clock();
+const boundExtent = groundSize / 2 - 2;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+  const elapsed = clock.elapsedTime;
+
+  updateSea(elapsed);
+  updatePointsOfInterest(elapsed);
+
+  yaw += (targetYaw - yaw) * 0.08;
+  pitch += (targetPitch - pitch) * 0.08;
+  camera.rotation.x = pitch;
+  camera.rotation.y = yaw;
+
+  // combinar movimiento del joystick/raton con el de las flechas del teclado
+  const keyMoveX = (keyMoveState.right ? 1 : 0) - (keyMoveState.left ? 1 : 0);
+  const keyMoveY = (keyMoveState.forward ? 1 : 0) - (keyMoveState.backward ? 1 : 0);
+  const totalMoveX = Math.max(-1, Math.min(1, moveX + keyMoveX));
+  const totalMoveY = Math.max(-1, Math.min(1, moveY + keyMoveY));
+  const keyActive = keyMoveX !== 0 || keyMoveY !== 0;
+
+  if (totalMoveX !== 0 || totalMoveY !== 0) {
+    const forwardX = -Math.sin(yaw), forwardZ = -Math.cos(yaw);
+    const rightX = Math.cos(yaw), rightZ = -Math.sin(yaw);
+    // el teclado se mueve mas rapido que el joystick (desplazamiento rapido)
+    const speed = (keyActive ? 6.0 : 2.4) * delta;
+    camera.position.x += (forwardX * totalMoveY + rightX * totalMoveX) * speed;
+    camera.position.z += (forwardZ * totalMoveY + rightZ * totalMoveX) * speed;
+    camera.position.x = Math.max(-boundExtent, Math.min(boundExtent, camera.position.x));
+    camera.position.z = Math.max(-boundExtent, Math.min(boundExtent, camera.position.z));
+  }
+
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
